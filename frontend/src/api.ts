@@ -20,10 +20,12 @@ export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   intent?: string;
+  status?: string;
   citations?: Citation[];
 }
 
 const API = "/api/v1";
+const CHAT_TIMEOUT_MS = 120_000;
 
 export async function fetchDocuments(): Promise<Document[]> {
   const res = await fetch(`${API}/documents`);
@@ -54,11 +56,14 @@ export async function chatStream(
   onToken: (t: string) => void,
   onMeta: (data: { session_id: string; intent: string }) => void,
   onCitation: (sources: Citation[]) => void,
+  onStatus: (message: string) => void,
+  signal?: AbortSignal,
 ): Promise<string> {
   const res = await fetch(`${API}/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ message, session_id: sessionId, doc_ids: docIds, stream: true }),
+    signal,
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -87,14 +92,27 @@ export async function chatStream(
       if (!data) continue;
       const parsed = JSON.parse(data);
       if (event === "meta") {
-        session = parsed.session_id;
-        onMeta(parsed);
+        session = parsed.session_id || session;
+        if (parsed.intent) onMeta(parsed);
+      } else if (event === "status") {
+        onStatus(parsed.message);
       } else if (event === "token") {
         onToken(parsed.content);
       } else if (event === "citation") {
         onCitation(parsed.sources);
+      } else if (event === "error") {
+        throw new Error(parsed.message || "对话失败");
       }
     }
   }
   return session;
+}
+
+export function createChatAbortSignal(): { signal: AbortSignal; cancel: () => void } {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), CHAT_TIMEOUT_MS);
+  return {
+    signal: controller.signal,
+    cancel: () => clearTimeout(timer),
+  };
 }

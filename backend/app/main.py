@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -8,9 +9,22 @@ from app.core.config import get_settings
 from app.services.db_service import init_db
 
 
+def _warmup_models() -> None:
+    from app.core.config import get_settings
+    from app.rag.embeddings import get_embedding_model
+    from app.rag.reranker import get_reranker
+
+    settings = get_settings()
+    get_embedding_model()
+    if settings.rerank_enabled:
+        get_reranker()
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     await init_db()
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, _warmup_models)
     yield
 
 
@@ -18,8 +32,8 @@ def create_app() -> FastAPI:
     settings = get_settings()
     app = FastAPI(
         title=settings.app_name,
-        version="0.1.0-mvp",
-        description="AI Agent + RAG 企业知识库 MVP",
+        version="0.2.0",
+        description="AI Agent + RAG 企业知识库",
         lifespan=lifespan,
     )
     app.add_middleware(

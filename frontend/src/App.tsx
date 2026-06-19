@@ -5,6 +5,7 @@ import {
   Citation,
   Document,
   chatStream,
+  createChatAbortSignal,
   deleteDocument,
   fetchDocuments,
   uploadDocument,
@@ -18,6 +19,12 @@ const SUGGESTIONS = [
   "根据制度生成请假申请",
 ];
 
+const CATEGORY_LABEL: Record<string, string> = {
+  policy: "制度",
+  contract: "合同",
+  other: "其他",
+};
+
 export default function App() {
   const [docs, setDocs] = useState<Document[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -27,6 +34,7 @@ export default function App() {
   const [uploading, setUploading] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<(() => void) | null>(null);
 
   const loadDocs = useCallback(async () => {
     try {
@@ -39,11 +47,31 @@ export default function App() {
 
   useEffect(() => {
     loadDocs();
+    return () => abortRef.current?.();
   }, [loadDocs]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
+
+  const updateAssistant = (
+    content: string,
+    intent: string,
+    status: string,
+    citations: Citation[],
+  ) => {
+    setMessages((m) => {
+      const copy = [...m];
+      copy[copy.length - 1] = {
+        role: "assistant",
+        content,
+        intent: intent || undefined,
+        status: status || undefined,
+        citations: citations.length ? citations : undefined,
+      };
+      return copy;
+    });
+  };
 
   const toggleDoc = (id: string) => {
     setSelected((prev) => {
@@ -90,8 +118,12 @@ export default function App() {
     let assistant = "";
     let citations: Citation[] = [];
     let intent = "";
+    let status = "连接中...";
 
-    setMessages((m) => [...m, { role: "assistant", content: "" }]);
+    setMessages((m) => [...m, { role: "assistant", content: "", status }]);
+
+    const { signal, cancel } = createChatAbortSignal();
+    abortRef.current = cancel;
 
     try {
       const sid = await chatStream(
@@ -100,11 +132,8 @@ export default function App() {
         Array.from(selected),
         (token) => {
           assistant += token;
-          setMessages((m) => {
-            const copy = [...m];
-            copy[copy.length - 1] = { role: "assistant", content: assistant, intent, citations };
-            return copy;
-          });
+          status = "";
+          updateAssistant(assistant, intent, status, citations);
         },
         (meta) => {
           setSessionId(meta.session_id);
@@ -112,22 +141,27 @@ export default function App() {
         },
         (sources) => {
           citations = sources;
+          updateAssistant(assistant, intent, status, citations);
         },
+        (statusMsg) => {
+          status = statusMsg;
+          updateAssistant(assistant, intent, status, citations);
+        },
+        signal,
       );
       setSessionId(sid);
-      setMessages((m) => {
-        const copy = [...m];
-        copy[copy.length - 1] = { role: "assistant", content: assistant, intent, citations };
-        return copy;
-      });
+      updateAssistant(assistant, intent, "", citations);
     } catch (e: unknown) {
-      const err = e instanceof Error ? e.message : "请求失败";
-      setMessages((m) => {
-        const copy = [...m];
-        copy[copy.length - 1] = { role: "assistant", content: `错误：${err}` };
-        return copy;
-      });
+      const err =
+        e instanceof DOMException && e.name === "AbortError"
+          ? "请求超时（120秒），请稍后重试"
+          : e instanceof Error
+            ? e.message
+            : "请求失败";
+      updateAssistant(`错误：${err}`, intent, "", citations);
     } finally {
+      cancel();
+      abortRef.current = null;
       setLoading(false);
     }
   };
@@ -153,6 +187,7 @@ export default function App() {
 
         <div className="doc-list">
           <h3>知识库文档 {docs.length ? `(${docs.length})` : ""}</h3>
+          <p className="doc-hint">不勾选时按问题意图自动筛选（制度问答忽略合同）</p>
           {docs.length === 0 && <p className="empty">暂无文档，请先上传或运行演示脚本</p>}
           {docs.map((d) => (
             <div key={d.id} className={`doc-item ${selected.has(d.id) ? "selected" : ""}`}>
@@ -161,6 +196,7 @@ export default function App() {
                 <span className="doc-name" title={d.filename}>{d.filename}</span>
               </label>
               <div className="doc-meta">
+                <span className="cat">{CATEGORY_LABEL[d.category] || d.category}</span>
                 <span className={`status ${d.status}`}>{d.status}</span>
                 <span>{d.chunk_count} 块</span>
                 <button className="link" onClick={() => onDelete(d.id)}>删除</button>
@@ -189,7 +225,14 @@ export default function App() {
                 <span className="intent-tag">{m.intent}</span>
               )}
               <div className="bubble-body">
-                <ReactMarkdown>{m.content || (loading && i === messages.length - 1 ? "思考中..." : "")}</ReactMarkdown>
+                {m.status && !m.content && (
+                  <p className="status-line">{m.status}</p>
+                )}
+                {m.content ? (
+                  <ReactMarkdown>{m.content}</ReactMarkdown>
+                ) : !m.status && loading && i === messages.length - 1 ? (
+                  <p className="status-line">准备中...</p>
+                ) : null}
               </div>
               {m.citations && m.citations.length > 0 && (
                 <div className="citations">
@@ -225,7 +268,7 @@ export default function App() {
             }}
           />
           <button className="send" disabled={loading || !input.trim()} onClick={() => send()}>
-            发送
+            {loading ? "生成中" : "发送"}
           </button>
         </footer>
       </main>
