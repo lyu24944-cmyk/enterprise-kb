@@ -1,22 +1,21 @@
-import json
 from pathlib import Path
+from typing import Any
 
 import chromadb
-from llama_index.core import StorageContext, VectorStoreIndex
-from llama_index.core.vector_stores import VectorStore
+from llama_index.core import StorageContext
 from llama_index.vector_stores.chroma import ChromaVectorStore
 
 from app.core.config import Settings
 
 
-def create_vector_store(settings: Settings) -> tuple[VectorStore, StorageContext, object | None]:
+def create_vector_store(settings: Settings) -> tuple[Any, StorageContext, object | None]:
     """创建向量存储。返回 (vector_store, storage_context, cleanup_handle)。"""
     if settings.vector_store == "faiss":
         return _create_faiss_store(settings)
     return _create_chroma_store(settings)
 
 
-def _create_chroma_store(settings: Settings) -> tuple[VectorStore, StorageContext, chromadb.Collection]:
+def _create_chroma_store(settings: Settings) -> tuple[Any, StorageContext, chromadb.Collection]:
     settings.chroma_path.mkdir(parents=True, exist_ok=True)
     client = chromadb.PersistentClient(path=str(settings.chroma_path))
     collection = client.get_or_create_collection(settings.chroma_collection)
@@ -25,7 +24,7 @@ def _create_chroma_store(settings: Settings) -> tuple[VectorStore, StorageContex
     return vector_store, storage, collection
 
 
-def _create_faiss_store(settings: Settings) -> tuple[VectorStore, StorageContext, Path]:
+def _create_faiss_store(settings: Settings) -> tuple[Any, StorageContext, Path]:
     import faiss
     from llama_index.vector_stores.faiss import FaissVectorStore
 
@@ -45,7 +44,7 @@ def _create_faiss_store(settings: Settings) -> tuple[VectorStore, StorageContext
     return vector_store, storage, settings.faiss_path
 
 
-def persist_faiss_if_needed(settings: Settings, vector_store: VectorStore) -> None:
+def persist_faiss_if_needed(settings: Settings, vector_store: Any) -> None:
     if settings.vector_store != "faiss":
         return
     import faiss
