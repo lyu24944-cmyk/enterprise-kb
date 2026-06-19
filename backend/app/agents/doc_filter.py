@@ -14,22 +14,34 @@ INTENT_CATEGORIES: dict[str, list[str]] = {
 }
 
 
+async def _docs_by_ids(session: AsyncSession, ids: list[str]) -> list[Document]:
+    if not ids:
+        return []
+    result = await session.execute(select(Document).where(Document.id.in_(ids)))
+    return list(result.scalars().all())
+
+
 async def resolve_doc_ids(
     session: AsyncSession,
     message: str,
     user_doc_ids: list[str] | None,
 ) -> tuple[str, list[str] | None, str | None]:
-    """
-    解析应检索的文档范围。
-    返回 (intent, doc_ids|None, hint_message|None)
-    - doc_ids=None 表示不限制文档
-  - doc_ids=[] 不应出现
-    """
     intent = detect_intent(message)
+    categories = INTENT_CATEGORIES.get(intent)
+
     if user_doc_ids:
+        selected = await _docs_by_ids(session, user_doc_ids)
+        if categories and selected:
+            filtered = [d for d in selected if d.category in categories]
+            if filtered and len(filtered) < len(selected):
+                skip = len(selected) - len(filtered)
+                label = "制度" if "policy" in categories else "合同"
+                hint = f"已自动忽略 {skip} 份非{label}类文档，避免检索噪声"
+                return intent, [d.id for d in filtered], hint
+            if filtered:
+                return intent, [d.id for d in filtered], None
         return intent, user_doc_ids, None
 
-    categories = INTENT_CATEGORIES.get(intent)
     if not categories:
         return intent, None, None
 

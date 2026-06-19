@@ -15,6 +15,13 @@ from app.parsers import parse_file
 from app.rag.retriever import RetrievedChunk, get_retriever
 
 
+async def _run_retrieve(query: str, doc_ids: list[str] | None) -> list[RetrievedChunk]:
+    import asyncio
+
+    retriever = get_retriever()
+    return await asyncio.to_thread(retriever.retrieve, query, doc_ids)
+
+
 def _format_context(chunks: list[RetrievedChunk]) -> str:
     parts = []
     for i, c in enumerate(chunks, 1):
@@ -74,8 +81,7 @@ async def stream_policy_qa(
     doc_ids: list[str] | None,
 ) -> AsyncIterator[dict]:
     yield {"event": "status", "message": "正在检索知识库..."}
-    retriever = get_retriever()
-    chunks = retriever.retrieve(message, doc_ids=doc_ids)
+    chunks = await _run_retrieve(message, doc_ids)
     if not chunks:
         yield {"event": "token", "content": "未在知识库中找到相关信息，请先上传相关制度文档。"}
         return
@@ -93,8 +99,7 @@ async def stream_leave_form(
     doc_ids: list[str] | None,
 ) -> AsyncIterator[dict]:
     yield {"event": "status", "message": "正在检索请假制度..."}
-    retriever = get_retriever()
-    chunks = retriever.retrieve("请假 制度 流程 年假 事假 病假", doc_ids=doc_ids)
+    chunks = await _run_retrieve("请假 制度 流程 年假 事假 病假", doc_ids)
     context = _format_context(chunks) if chunks else "（未检索到请假制度，请基于通用企业规范生成并注明需 HR 确认）"
     yield {"event": "status", "message": "正在生成请假申请..."}
     prompt = f"【请假制度上下文】\n{context}\n\n【用户需求】\n{message}"
@@ -213,8 +218,7 @@ async def stream_chat(
 # ---- 非流式兼容（tasks API） ----
 
 async def run_policy_qa(message: str, doc_ids: list[str] | None = None) -> tuple[str, list[Citation]]:
-    retriever = get_retriever()
-    chunks = retriever.retrieve(message, doc_ids=doc_ids)
+    chunks = await _run_retrieve(message, doc_ids)
     if not chunks:
         return "未在知识库中找到相关信息，请先上传相关制度文档。", []
     context = _format_context(chunks)

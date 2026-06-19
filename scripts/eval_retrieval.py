@@ -46,11 +46,14 @@ def run_eval() -> None:
     retriever = get_retriever()
     top_n = settings.rerank_top_n
     top_k = settings.retrieval_top_k
+    mode = settings.rerank_mode if settings.rerank_enabled else "disabled"
 
     hit_with, hit_without = 0, 0
 
     print(f"向量库: {settings.vector_store} | Embedding: {settings.embedding_model}")
-    print(f"Rerank: {settings.rerank_model if settings.rerank_enabled else 'disabled'}")
+    print(f"Rerank: {mode}")
+    if mode == "cross_encoder":
+        print("警告: cross_encoder 在 CPU 上极慢，仅建议评测时使用")
     print("-" * 52)
 
     for query, keywords in EVAL_SET:

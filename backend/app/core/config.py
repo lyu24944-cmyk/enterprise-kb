@@ -24,7 +24,9 @@ class Settings(BaseSettings):
 
     embedding_model: str = "BAAI/bge-small-zh-v1.5"
     rerank_model: str = "BAAI/bge-reranker-v2-m3"
+    rerank_mode: str = "light"  # light | cross_encoder
     rerank_enabled: bool = True
+    rerank_max_candidates: int = 5
     vector_store: str = "chroma"
     chroma_persist_dir: str = str(_PROJECT_ROOT / "data" / "chroma")
     chroma_collection: str = "enterprise_kb"

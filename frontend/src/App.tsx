@@ -187,7 +187,7 @@ export default function App() {
 
         <div className="doc-list">
           <h3>知识库文档 {docs.length ? `(${docs.length})` : ""}</h3>
-          <p className="doc-hint">不勾选时按问题意图自动筛选（制度问答忽略合同）</p>
+          <p className="doc-hint">不勾选时自动筛选；全选时也会按问题类型忽略无关文档（如制度问答忽略合同）</p>
           {docs.length === 0 && <p className="empty">暂无文档，请先上传或运行演示脚本</p>}
           {docs.map((d) => (
             <div key={d.id} className={`doc-item ${selected.has(d.id) ? "selected" : ""}`}>

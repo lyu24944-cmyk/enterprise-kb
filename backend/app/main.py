@@ -12,12 +12,12 @@ from app.services.db_service import init_db
 def _warmup_models() -> None:
     from app.core.config import get_settings
     from app.rag.embeddings import get_embedding_model
-    from app.rag.reranker import get_reranker
+    from app.rag.reranker import get_cross_encoder
 
     settings = get_settings()
     get_embedding_model()
-    if settings.rerank_enabled:
-        get_reranker()
+    if settings.rerank_enabled and settings.rerank_mode == "cross_encoder":
+        get_cross_encoder()
 
 
 @asynccontextmanager
@@ -32,7 +32,7 @@ def create_app() -> FastAPI:
     settings = get_settings()
     app = FastAPI(
         title=settings.app_name,
-        version="0.2.0",
+        version="0.2.1",
         description="AI Agent + RAG 企业知识库",
         lifespan=lifespan,
     )
@@ -53,7 +53,7 @@ def create_app() -> FastAPI:
             "llm": settings.llm_provider,
             "embedding": settings.embedding_model,
             "vector_store": settings.vector_store,
-            "rerank": settings.rerank_model if settings.rerank_enabled else "disabled",
+            "rerank": f"{settings.rerank_mode}" if settings.rerank_enabled else "disabled",
         }
 
     return app
